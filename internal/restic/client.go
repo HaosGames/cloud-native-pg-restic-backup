@@ -2,8 +2,12 @@ package restic
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
+	"time"
 )
 
 // Config holds the configuration for the Restic client
@@ -20,6 +24,14 @@ type Client struct {
 	config Config
 }
 
+// Snapshot represents a Restic snapshot
+type Snapshot struct {
+	ID       string    `json:"id"`
+	Time     time.Time `json:"time"`
+	Hostname string    `json:"hostname"`
+	Tags     []string  `json:"tags"`
+}
+
 // NewClient creates a new Restic client
 func NewClient(cfg Config) *Client {
 	return &Client{config: cfg}
@@ -31,6 +43,9 @@ func (c *Client) InitRepository(ctx context.Context) error {
 	c.setEnvironment(cmd)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
+		if strings.Contains(string(output), "repository already initialized") {
+			return nil
+		}
 		return fmt.Errorf("failed to initialize repository: %w: %s", err, string(output))
 	}
 	return nil
@@ -61,6 +76,57 @@ func (c *Client) Restore(ctx context.Context, snapshotID, targetPath string) err
 		return fmt.Errorf("restore failed: %w: %s", err, string(output))
 	}
 	return nil
+}
+
+// RestoreFile restores a single file from a snapshot
+func (c *Client) RestoreFile(ctx context.Context, snapshotID, filePath, targetPath string) error {
+	cmd := exec.CommandContext(ctx, "restic", "restore", snapshotID, "--include", filePath, "--target", targetPath)
+	c.setEnvironment(cmd)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("file restore failed: %w: %s", err, string(output))
+	}
+	return nil
+}
+
+// FindSnapshots finds snapshots matching the given tags
+func (c *Client) FindSnapshots(ctx context.Context, tags []string) ([]*Snapshot, error) {
+	args := []string{"snapshots", "--json"}
+	for _, tag := range tags {
+		args = append(args, "--tag", tag)
+	}
+
+	cmd := exec.CommandContext(ctx, "restic", args...)
+	c.setEnvironment(cmd)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list snapshots: %w", err)
+	}
+
+	var snapshots []*Snapshot
+	if err := json.Unmarshal(output, &snapshots); err != nil {
+		return nil, fmt.Errorf("failed to parse snapshots: %w", err)
+	}
+
+	return snapshots, nil
+}
+
+// DeleteSnapshots deletes the specified snapshots
+func (c *Client) DeleteSnapshots(ctx context.Context, snapshotIDs []string) error {
+	args := append([]string{"forget", "--prune"}, snapshotIDs...)
+	cmd := exec.CommandContext(ctx, "restic", args...)
+	c.setEnvironment(cmd)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to delete snapshots: %w: %s", err, string(output))
+	}
+	return nil
+}
+
+// EnsureDirectory ensures a directory exists
+func (c *Client) EnsureDirectory(ctx context.Context, path string) error {
+	return os.MkdirAll(path, 0755)
 }
 
 // setEnvironment sets the required environment variables for the Restic command

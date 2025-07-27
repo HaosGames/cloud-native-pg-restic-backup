@@ -3,7 +3,9 @@ package restore
 import (
 	"context"
 	"fmt"
+
 	"cloud-native-pg-restic-backup/internal/restic"
+	"cloud-native-pg-restic-backup/internal/wal"
 )
 
 // Handler interface defines the operations for restore handling
@@ -14,27 +16,30 @@ type Handler interface {
 
 // handlerImpl implements the Handler interface
 type handlerImpl struct {
-	client *restic.Client
+	client     *restic.Client
+	walManager *wal.Manager
 }
 
 // NewHandler creates a new restore handler
 func NewHandler(client *restic.Client) Handler {
 	return &handlerImpl{
-		client: client,
+		client:     client,
+		walManager: wal.NewManager(client),
 	}
 }
 
 // RestoreBackup restores a full backup to the specified directory
 func (h *handlerImpl) RestoreBackup(ctx context.Context, snapshotID, targetDir string) error {
-	return h.client.Restore(ctx, snapshotID, targetDir)
+	if err := h.client.Restore(ctx, snapshotID, targetDir); err != nil {
+		return fmt.Errorf("failed to restore backup: %v", err)
+	}
+	return nil
 }
 
 // RestoreWAL restores a WAL segment for PITR
 func (h *handlerImpl) RestoreWAL(ctx context.Context, walFile, targetPath string) error {
-	// TODO: Implement WAL restore logic
-	// This will need to:
-	// 1. Find the snapshot containing the WAL file
-	// 2. Restore only that specific WAL file
-	// 3. Place it in the correct location for PostgreSQL recovery
-	return fmt.Errorf("WAL restore not yet implemented")
+	if err := h.walManager.RestoreWALSegment(ctx, walFile, targetPath); err != nil {
+		return fmt.Errorf("failed to restore WAL segment: %v", err)
+	}
+	return nil
 }
