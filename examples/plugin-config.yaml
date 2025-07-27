@@ -35,7 +35,8 @@ spec:
   backup:
     target: primary
     custom:
-      method: custom
+      method: http
+      endpointURL: http://localhost:8080
       pluginImage: your-registry/cnpg-restic-plugin:latest
       secretName: restic-backup-config
       env:
@@ -43,10 +44,12 @@ spec:
           value: "s3:https://your-endpoint/your-bucket/backups"
         - name: AWS_ENDPOINT
           value: "https://your-s3-endpoint"
+  
   # WAL archiving configuration for PITR
   walArchive:
     custom:
-      method: custom
+      method: http
+      endpointURL: http://localhost:8080
       pluginImage: your-registry/cnpg-restic-plugin:latest
       secretName: restic-backup-config
       env:
