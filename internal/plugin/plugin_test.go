@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"cloud-native-pg-restic-backup/internal/logging"
 )
 
 // Mock implementations
@@ -37,19 +39,14 @@ func (m *mockRestoreHandler) RestoreWAL(_ context.Context, _, _ string) error {
 	return m.restoreWALErr
 }
 
-type mockLogger struct {
-	messages []string
-}
-
-func (m *mockLogger) Printf(format string, v ...interface{}) {
-	m.messages = append(m.messages, format)
-}
-
 // Test helper function to create a new plugin with mock handlers
-func newTestPlugin() (*Plugin, *mockBackupHandler, *mockRestoreHandler, *mockLogger) {
+func newTestPlugin() (*Plugin, *mockBackupHandler, *mockRestoreHandler) {
 	backupHandler := &mockBackupHandler{}
 	restoreHandler := &mockRestoreHandler{}
-	logger := &mockLogger{}
+	logger := logging.NewLogger(logging.Config{
+		Level:      "info",
+		JSONOutput: false,
+	})
 
 	p := &Plugin{
 		backupHandler:  backupHandler,
@@ -57,11 +54,11 @@ func newTestPlugin() (*Plugin, *mockBackupHandler, *mockRestoreHandler, *mockLog
 		logger:        logger,
 	}
 
-	return p, backupHandler, restoreHandler, logger
+	return p, backupHandler, restoreHandler
 }
 
 func TestPlugin_HandleBackup(t *testing.T) {
-	p, backupHandler, _, _ := newTestPlugin()
+	p, backupHandler, _ := newTestPlugin()
 
 	tests := []struct {
 		name           string
@@ -123,7 +120,7 @@ func TestPlugin_HandleBackup(t *testing.T) {
 }
 
 func TestPlugin_HandleWALArchive(t *testing.T) {
-	p, backupHandler, _, _ := newTestPlugin()
+	p, backupHandler, _ := newTestPlugin()
 
 	tests := []struct {
 		name           string
@@ -185,7 +182,7 @@ func TestPlugin_HandleWALArchive(t *testing.T) {
 }
 
 func TestPlugin_HandleRestore(t *testing.T) {
-	p, _, restoreHandler, _ := newTestPlugin()
+	p, _, restoreHandler := newTestPlugin()
 
 	tests := []struct {
 		name           string

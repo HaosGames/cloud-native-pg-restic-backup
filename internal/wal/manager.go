@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"cloud-native-pg-restic-backup/internal/logging"
 	"cloud-native-pg-restic-backup/internal/restic"
 )
 
@@ -35,12 +36,14 @@ var (
 // Manager handles WAL segment operations
 type Manager struct {
 	client *restic.Client
+	logger *logging.Logger
 }
 
 // NewManager creates a new WAL manager
-func NewManager(client *restic.Client) *Manager {
+func NewManager(client *restic.Client, logger *logging.Logger) *Manager {
 	return &Manager{
 		client: client,
+		logger: logger.Component("wal"),
 	}
 }
 
@@ -75,11 +78,25 @@ func ParseWALFileName(name string) (*Segment, error) {
 
 // ArchiveWAL archives a WAL segment
 func (m *Manager) ArchiveWAL(ctx context.Context, walPath string) error {
+	logger := m.logger.Operation("archive_wal").WithFields(map[string]interface{}{
+		"wal_path": walPath,
+	})
+
 	walFileName := filepath.Base(walPath)
 	segment, err := ParseWALFileName(walFileName)
 	if err != nil {
+		logger.Error().Err(err).Msg("Failed to parse WAL file name")
 		return fmt.Errorf("failed to parse WAL file name: %v", err)
 	}
+
+	logger = logger.WithFields(map[string]interface{}{
+		"timeline":    segment.Timeline,
+		"logical_id":  segment.LogicalID,
+		"segment_id":  segment.SegmentID,
+		"wal_file":    walFileName,
+	})
+
+	logger.Info().Msg("Starting WAL segment archival")
 
 	// Set tags for WAL segment identification
 	tags := []string{
@@ -92,16 +109,25 @@ func (m *Manager) ArchiveWAL(ctx context.Context, walPath string) error {
 
 	// Archive the WAL segment
 	if err := m.client.Backup(ctx, walPath, tags); err != nil {
+		logger.Error().Err(err).Msg("Failed to archive WAL segment")
 		return fmt.Errorf("failed to archive WAL segment: %v", err)
 	}
 
+	logger.Info().Msg("Successfully archived WAL segment")
 	return nil
 }
 
 // FindWALSegment finds a specific WAL segment in the repository
 func (m *Manager) FindWALSegment(ctx context.Context, walFileName string) (*Segment, error) {
+	logger := m.logger.Operation("find_wal").WithFields(map[string]interface{}{
+		"wal_file": walFileName,
+	})
+
+	logger.Info().Msg("Searching for WAL segment")
+
 	segment, err := ParseWALFileName(walFileName)
 	if err != nil {
+		logger.Error().Err(err).Msg("Failed to parse WAL file name")
 		return nil, fmt.Errorf("failed to parse WAL file name: %v", err)
 	}
 
@@ -111,10 +137,12 @@ func (m *Manager) FindWALSegment(ctx context.Context, walFileName string) (*Segm
 		fmt.Sprintf("wal_file:%s", walFileName),
 	})
 	if err != nil {
+		logger.Error().Err(err).Msg("Failed to find WAL segment")
 		return nil, fmt.Errorf("failed to find WAL segment: %v", err)
 	}
 
 	if len(snapshots) == 0 {
+		logger.Error().Msg("WAL segment not found")
 		return nil, fmt.Errorf("WAL segment not found: %s", walFileName)
 	}
 
@@ -123,11 +151,23 @@ func (m *Manager) FindWALSegment(ctx context.Context, walFileName string) (*Segm
 	segment.BackupID = latestSnapshot.ID
 	segment.ArchivedAt = latestSnapshot.Time
 
+	logger.Info().
+		Str("backup_id", segment.BackupID).
+		Time("archived_at", segment.ArchivedAt).
+		Msg("Found WAL segment")
+
 	return segment, nil
 }
 
 // RestoreWALSegment restores a specific WAL segment
 func (m *Manager) RestoreWALSegment(ctx context.Context, walFileName, targetPath string) error {
+	logger := m.logger.Operation("restore_wal").WithFields(map[string]interface{}{
+		"wal_file": walFileName,
+		"target_path": targetPath,
+	})
+
+	logger.Info().Msg("Starting WAL segment restoration")
+
 	segment, err := m.FindWALSegment(ctx, walFileName)
 	if err != nil {
 		return err
@@ -136,22 +176,32 @@ func (m *Manager) RestoreWALSegment(ctx context.Context, walFileName, targetPath
 	// Ensure target directory exists
 	targetDir := filepath.Dir(targetPath)
 	if err := m.client.EnsureDirectory(ctx, targetDir); err != nil {
+		logger.Error().Err(err).Msg("Failed to create target directory")
 		return fmt.Errorf("failed to create target directory: %v", err)
 	}
 
 	// Restore only the specific WAL file
 	if err := m.client.RestoreFile(ctx, segment.BackupID, walFileName, targetPath); err != nil {
+		logger.Error().Err(err).Msg("Failed to restore WAL segment")
 		return fmt.Errorf("failed to restore WAL segment: %v", err)
 	}
 
+	logger.Info().Msg("Successfully restored WAL segment")
 	return nil
 }
 
 // CleanupWALSegments removes WAL segments before a given time
 func (m *Manager) CleanupWALSegments(ctx context.Context, before time.Time) error {
+	logger := m.logger.Operation("cleanup_wal").WithFields(map[string]interface{}{
+		"before": before,
+	})
+
+	logger.Info().Msg("Starting WAL segments cleanup")
+
 	// Find all WAL snapshots before the specified time
 	snapshots, err := m.client.FindSnapshots(ctx, []string{"type:wal"})
 	if err != nil {
+		logger.Error().Err(err).Msg("Failed to list WAL segments")
 		return fmt.Errorf("failed to list WAL segments: %v", err)
 	}
 
@@ -162,10 +212,19 @@ func (m *Manager) CleanupWALSegments(ctx context.Context, before time.Time) erro
 		}
 	}
 
+	logger.Info().
+		Int("total_segments", len(snapshots)).
+		Int("segments_to_delete", len(snapshotsToDelete)).
+		Msg("Found WAL segments for cleanup")
+
 	if len(snapshotsToDelete) > 0 {
 		if err := m.client.DeleteSnapshots(ctx, snapshotsToDelete); err != nil {
+			logger.Error().Err(err).Msg("Failed to delete old WAL segments")
 			return fmt.Errorf("failed to delete old WAL segments: %v", err)
 		}
+		logger.Info().Msg("Successfully deleted old WAL segments")
+	} else {
+		logger.Info().Msg("No WAL segments to delete")
 	}
 
 	return nil
@@ -173,13 +232,18 @@ func (m *Manager) CleanupWALSegments(ctx context.Context, before time.Time) erro
 
 // GetWALTimeline returns the current WAL timeline
 func (m *Manager) GetWALTimeline(ctx context.Context) (Timeline, error) {
+	logger := m.logger.Operation("get_timeline")
+	logger.Info().Msg("Getting current WAL timeline")
+
 	// Find the most recent WAL segment
 	snapshots, err := m.client.FindSnapshots(ctx, []string{"type:wal"})
 	if err != nil {
+		logger.Error().Err(err).Msg("Failed to get WAL timeline")
 		return 0, fmt.Errorf("failed to get WAL timeline: %v", err)
 	}
 
 	if len(snapshots) == 0 {
+		logger.Info().Msg("No WAL segments found, using default timeline 1")
 		return 1, nil // Default timeline if no WAL segments exist
 	}
 
@@ -188,11 +252,16 @@ func (m *Manager) GetWALTimeline(ctx context.Context) (Timeline, error) {
 		if walFile := walFileRegex.FindString(tag); walFile != "" {
 			segment, err := ParseWALFileName(walFile)
 			if err != nil {
+				logger.Error().Err(err).Msg("Failed to parse WAL file name")
 				return 0, fmt.Errorf("failed to parse WAL file name: %v", err)
 			}
+			logger.Info().
+				Uint32("timeline", uint32(segment.Timeline)).
+				Msg("Found current WAL timeline")
 			return segment.Timeline, nil
 		}
 	}
 
+	logger.Error().Msg("No valid WAL file found in latest snapshot")
 	return 0, fmt.Errorf("no valid WAL file found in latest snapshot")
 }
