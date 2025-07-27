@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: restic-backup-config
+  namespace: cnpg-system
+type: Opaque
+data:
+  # These values need to be base64 encoded
+  RESTIC_PASSWORD: cGFzc3dvcmQ=  # "password"
+  AWS_ACCESS_KEY_ID: eW91ci1hY2Nlc3Mta2V5  # "your-access-key"
+  AWS_SECRET_ACCESS_KEY: eW91ci1zZWNyZXQta2V5  # "your-secret-key"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgresql-test
+  namespace: cnpg-system
+spec:
+  instances: 1
+  
+  # Using PostgreSQL 15.5 which is supported by CNPG 1.26.1
+  imageName: ghcr.io/cloudnative-pg/postgresql:15.5
+  
+  # PostgreSQL configuration
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      
+  # Storage configuration
+  storage:
+    size: 1Gi
+    
+  # Backup configuration
+  backup:
+    target: primary
+    custom:
+      method: custom
+      pluginImage: your-registry/cnpg-restic-plugin:latest
+      secretName: restic-backup-config
+      env:
+        - name: RESTIC_REPOSITORY
+          value: "s3:https://your-endpoint/your-bucket/backups"
+        - name: AWS_ENDPOINT
+          value: "https://your-s3-endpoint"
+  # WAL archiving configuration for PITR
+  walArchive:
+    custom:
+      method: custom
+      pluginImage: your-registry/cnpg-restic-plugin:latest
+      secretName: restic-backup-config
+      env:
+        - name: RESTIC_REPOSITORY
+          value: "s3:https://your-endpoint/your-bucket/wal-archive"
+        - name: AWS_ENDPOINT
+          value: "https://your-s3-endpoint"
