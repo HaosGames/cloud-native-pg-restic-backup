@@ -41,6 +41,9 @@ func TestBackupRestore(t *testing.T) {
 
 	// Initialize client and handlers
 	client := restic.NewClient(config)
+	if err := client.InitRepository(ctx); err != nil {
+		t.Fatalf("Failed to initialize repository")
+	}
 	backupHandler := backup.NewHandler(client)
 
 	// Test backup
@@ -81,6 +84,9 @@ func TestWALArchiving(t *testing.T) {
 
 	// Initialize client and handlers
 	client := restic.NewClient(config)
+	if err := client.InitRepository(ctx); err != nil {
+		t.Fatalf("Failed to initialize repository: %v", err)
+	}
 	backupHandler := backup.NewHandler(client)
 
 	// Create test WAL file

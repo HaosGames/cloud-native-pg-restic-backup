@@ -16,7 +16,7 @@ func (c *clientImpl) InitRepository(ctx context.Context) error {
 	c.setEnvironment(cmd)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		if strings.Contains(string(output), "repository already initialized") {
+		if strings.Contains(string(output), "repository master key and config already initialized") {
 			return nil
 		}
 		return fmt.Errorf("failed to initialize repository: %w: %s", err, string(output))
