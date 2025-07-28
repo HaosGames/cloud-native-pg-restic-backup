@@ -1,13 +1,4 @@
 // Package plugin implements the CloudNative PostgreSQL backup plugin interface.
-//
-// The plugin provides HTTP endpoints for:
-// - Full database backups
-// - Backup restoration
-// - WAL archiving
-// - WAL restoration
-//
-// It integrates with Restic for efficient backup storage and implements
-// the required interfaces for CloudNative PostgreSQL operator integration.
 package plugin
 
 import (
@@ -22,18 +13,14 @@ import (
 	"cloud-native-pg-restic-backup/internal/restore"
 )
 
-// Plugin implements the CloudNative PostgreSQL backup/restore plugin interface.
-// It provides HTTP endpoints that the operator uses to manage backups and
-// WAL archiving operations.
+// Plugin implements the CloudNative PostgreSQL backup/restore plugin interface
 type Plugin struct {
 	backupHandler  backup.Handler
 	restoreHandler restore.Handler
 	logger         *logging.Logger
 }
 
-// NewPlugin creates a new plugin instance with the given configuration.
-// It initializes the backup and restore handlers with the provided
-// Restic configuration and logger.
+// NewPlugin creates a new plugin instance
 func NewPlugin(config restic.Config, logger *logging.Logger) *Plugin {
 	client := restic.NewClient(config)
 	return &Plugin{
@@ -43,46 +30,69 @@ func NewPlugin(config restic.Config, logger *logging.Logger) *Plugin {
 	}
 }
 
-// ServeHTTP implements the HTTP handler interface.
-// It routes incoming requests to the appropriate handler based on the URL path:
-// - /backup: Create full database backups
-// - /restore: Restore from backup
-// - /wal-archive: Archive WAL segments
-// - /wal-restore: Restore WAL segments
+// ServeHTTP implements the HTTP handler interface
 func (p *Plugin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// ... [rest of the implementation remains the same]
+	logger := p.logger.Operation("http").WithFields(map[string]interface{}{
+		"method": r.Method,
+		"path":   r.URL.Path,
+	})
+
+	switch r.URL.Path {
+	case "/backup":
+		p.handleBackup(w, r, logger)
+	case "/restore":
+		p.handleRestore(w, r, logger)
+	case "/wal-archive":
+		p.handleWALArchive(w, r, logger)
+	case "/wal-restore":
+		p.handleWALRestore(w, r, logger)
+	default:
+		logger.Warn().Msg("Not found")
+		http.Error(w, "Not found", http.StatusNotFound)
+	}
 }
 
-// BackupRequest represents the backup API request payload.
-// The operator sends this when requesting a new backup.
+// BackupRequest represents the backup API request
 type BackupRequest struct {
-	// BackupID is a unique identifier for this backup
-	BackupID string `json:"backupID"`
-
-	// DataFolder is the path to the PostgreSQL data directory
-	DataFolder string `json:"dataFolder"`
-
-	// DestinationPath is where the backup should be stored
+	BackupID        string `json:"backupID"`
+	DataFolder      string `json:"dataFolder"`
 	DestinationPath string `json:"destinationPath"`
 }
 
-// handleBackup processes backup requests.
-// It validates the request, performs the backup operation,
-// and returns the result to the operator.
 func (p *Plugin) handleBackup(w http.ResponseWriter, r *http.Request, logger *logging.Logger) {
-	// ... [rest of the implementation remains the same]
+	if r.Method != http.MethodPost {
+		logger.Warn().Str("allowed_method", "POST").Msg("Method not allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req BackupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error().Err(err).Msg("Invalid request")
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	logger = logger.WithFields(map[string]interface{}{
+		"backup_id":   req.BackupID,
+		"data_folder": req.DataFolder,
+	})
+	logger.Info().Msg("Starting backup")
+
+	if err := p.backupHandler.CreateBackup(r.Context(), req.DataFolder); err != nil {
+		logger.Error().Err(err).Msg("Backup failed")
+		http.Error(w, fmt.Sprintf("Backup failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info().Msg("Backup completed successfully")
+	w.WriteHeader(http.StatusOK)
 }
 
-// RestoreRequest represents the restore API request payload.
-// The operator sends this when requesting a backup restoration.
+// RestoreRequest represents the restore API request
 type RestoreRequest struct {
-	// BackupID identifies the backup to restore from
-	BackupID string `json:"backupID"`
-
-	// DestFolder is where the backup should be restored
-	DestFolder string `json:"destFolder"`
-
-	// RecoveryTarget specifies PITR options if needed
+	BackupID    string `json:"backupID"`
+	DestFolder  string `json:"destFolder"`
 	RecoveryTarget *struct {
 		TargetTime     string `json:"targetTime,omitempty"`
 		TargetXID      string `json:"targetXID,omitempty"`
@@ -92,41 +102,110 @@ type RestoreRequest struct {
 	} `json:"recoveryTarget,omitempty"`
 }
 
-// handleRestore processes restore requests.
-// It validates the request, performs the restore operation,
-// and handles any PITR requirements.
 func (p *Plugin) handleRestore(w http.ResponseWriter, r *http.Request, logger *logging.Logger) {
-	// ... [rest of the implementation remains the same]
+	if r.Method != http.MethodPost {
+		logger.Warn().Str("allowed_method", "POST").Msg("Method not allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req RestoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error().Err(err).Msg("Invalid request")
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	logger = logger.WithFields(map[string]interface{}{
+		"backup_id":   req.BackupID,
+		"dest_folder": req.DestFolder,
+	})
+	if req.RecoveryTarget != nil {
+		logger = logger.WithFields(map[string]interface{}{
+			"recovery_target": req.RecoveryTarget,
+		})
+	}
+	logger.Info().Msg("Starting restore")
+
+	if err := p.restoreHandler.RestoreBackup(r.Context(), req.BackupID, req.DestFolder); err != nil {
+		logger.Error().Err(err).Msg("Restore failed")
+		http.Error(w, fmt.Sprintf("Restore failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info().Msg("Restore completed successfully")
+	w.WriteHeader(http.StatusOK)
 }
 
-// WALArchiveRequest represents the WAL archive API request payload.
-// PostgreSQL sends this when archiving WAL segments.
+// WALArchiveRequest represents the WAL archive API request
 type WALArchiveRequest struct {
-	// WalFileName is the name of the WAL segment file
 	WalFileName string `json:"walFileName"`
-
-	// WalFilePath is the full path to the WAL segment
 	WalFilePath string `json:"walFilePath"`
 }
 
-// handleWALArchive processes WAL archiving requests.
-// It archives individual WAL segments using the WAL manager.
 func (p *Plugin) handleWALArchive(w http.ResponseWriter, r *http.Request, logger *logging.Logger) {
-	// ... [rest of the implementation remains the same]
+	if r.Method != http.MethodPost {
+		logger.Warn().Str("allowed_method", "POST").Msg("Method not allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req WALArchiveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error().Err(err).Msg("Invalid request")
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	logger = logger.WithFields(map[string]interface{}{
+		"wal_file": req.WalFileName,
+		"wal_path": req.WalFilePath,
+	})
+	logger.Info().Msg("Starting WAL archival")
+
+	if err := p.backupHandler.ArchiveWAL(r.Context(), req.WalFilePath); err != nil {
+		logger.Error().Err(err).Msg("WAL archiving failed")
+		http.Error(w, fmt.Sprintf("WAL archiving failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info().Msg("WAL archival completed successfully")
+	w.WriteHeader(http.StatusOK)
 }
 
-// WALRestoreRequest represents the WAL restore API request payload.
-// PostgreSQL sends this when requesting WAL segment restoration.
+// WALRestoreRequest represents the WAL restore API request
 type WALRestoreRequest struct {
-	// WalFileName is the name of the WAL segment to restore
 	WalFileName string `json:"walFileName"`
-
-	// DestFolder is where the WAL segment should be restored
-	DestFolder string `json:"destFolder"`
+	DestFolder  string `json:"destFolder"`
 }
 
-// handleWALRestore processes WAL restoration requests.
-// It restores individual WAL segments for recovery operations.
 func (p *Plugin) handleWALRestore(w http.ResponseWriter, r *http.Request, logger *logging.Logger) {
-	// ... [rest of the implementation remains the same]
+	if r.Method != http.MethodPost {
+		logger.Warn().Str("allowed_method", "POST").Msg("Method not allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req WALRestoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error().Err(err).Msg("Invalid request")
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	logger = logger.WithFields(map[string]interface{}{
+		"wal_file":    req.WalFileName,
+		"dest_folder": req.DestFolder,
+	})
+	logger.Info().Msg("Starting WAL restore")
+
+	destPath := filepath.Join(req.DestFolder, req.WalFileName)
+	if err := p.restoreHandler.RestoreWAL(r.Context(), req.WalFileName, destPath); err != nil {
+		logger.Error().Err(err).Msg("WAL restore failed")
+		http.Error(w, fmt.Sprintf("WAL restore failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info().Msg("WAL restore completed successfully")
+	w.WriteHeader(http.StatusOK)
 }
