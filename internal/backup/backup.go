@@ -17,13 +17,13 @@ type Handler interface {
 
 // handlerImpl implements the Handler interface
 type handlerImpl struct {
-	client     *restic.Client
+	client     restic.Client
 	walManager *wal.Manager
 	logger     *logging.Logger
 }
 
 // NewHandler creates a new backup handler
-func NewHandler(client *restic.Client) Handler {
+func NewHandler(client restic.Client) Handler {
 	logger := logging.NewLogger(logging.Config{
 		Level:      "info",
 		JSONOutput: false,
@@ -38,6 +38,10 @@ func NewHandler(client *restic.Client) Handler {
 
 // CreateBackup performs a full backup of the specified PostgreSQL data directory
 func (h *handlerImpl) CreateBackup(ctx context.Context, dataDir string) error {
+	if dataDir == "" {
+		return fmt.Errorf("data directory not specified")
+	}
+
 	logger := h.logger.Operation("create_backup").WithFields(map[string]interface{}{
 		"data_dir": dataDir,
 	})
@@ -71,9 +75,14 @@ func (h *handlerImpl) CreateBackup(ctx context.Context, dataDir string) error {
 
 // ArchiveWAL archives a WAL segment using Restic
 func (h *handlerImpl) ArchiveWAL(ctx context.Context, walPath string) error {
+	if walPath == "" {
+		return fmt.Errorf("WAL path not specified")
+	}
+
 	logger := h.logger.Operation("archive_wal").WithFields(map[string]interface{}{
 		"wal_path": walPath,
 	})
+
 	logger.Info().Msg("Starting WAL archival")
 
 	if err := h.walManager.ArchiveWAL(ctx, walPath); err != nil {

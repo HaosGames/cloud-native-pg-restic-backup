@@ -12,8 +12,8 @@ import (
 
 func TestBackupRestore(t *testing.T) {
 	// Skip if not in CI/CD or explicit test environment
-	if os.Getenv("TEST_S3_ENDPOINT") == "" {
-		t.Skip("Skipping integration test - TEST_S3_ENDPOINT not set")
+	if os.Getenv("TEST_RESTIC_REPOSITORY") == "" {
+		t.Skip("Skipping integration test - TEST_RESTIC_REPOSITORY not set")
 	}
 
 	ctx := context.Background()
@@ -64,8 +64,8 @@ func TestBackupRestore(t *testing.T) {
 }
 
 func TestWALArchiving(t *testing.T) {
-	if os.Getenv("TEST_S3_ENDPOINT") == "" {
-		t.Skip("Skipping integration test - TEST_S3_ENDPOINT not set")
+	if os.Getenv("TEST_RESTIC_REPOSITORY") == "" {
+		t.Skip("Skipping integration test - TEST_RESTIC_REPOSITORY not set")
 	}
 
 	ctx := context.Background()

@@ -36,12 +36,12 @@ var (
 
 // Manager handles WAL segment operations
 type Manager struct {
-	client *restic.Client
+	client restic.Client
 	logger *logging.Logger
 }
 
 // NewManager creates a new WAL manager
-func NewManager(client *restic.Client, logger *logging.Logger) *Manager {
+func NewManager(client restic.Client, logger *logging.Logger) *Manager {
 	return &Manager{
 		client: client,
 		logger: logger.Component("wal"),

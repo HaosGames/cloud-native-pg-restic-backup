@@ -7,38 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 )
 
-// Config holds the configuration for the Restic client
-type Config struct {
-	Repository  string
-	Password    string
-	S3Endpoint  string
-	S3AccessKey string
-	S3SecretKey string
-}
+// Implementation of the Client interface using the Restic CLI
 
-// Client implements the Restic operations
-type Client struct {
-	config Config
-}
-
-// Snapshot represents a Restic snapshot
-type Snapshot struct {
-	ID       string    `json:"id"`
-	Time     time.Time `json:"time"`
-	Hostname string    `json:"hostname"`
-	Tags     []string  `json:"tags"`
-}
-
-// NewClient creates a new Restic client
-func NewClient(cfg Config) *Client {
-	return &Client{config: cfg}
-}
-
-// InitRepository initializes a new Restic repository if it doesn't exist
-func (c *Client) InitRepository(ctx context.Context) error {
+func (c *clientImpl) InitRepository(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "restic", "init")
 	c.setEnvironment(cmd)
 
@@ -51,8 +24,7 @@ func (c *Client) InitRepository(ctx context.Context) error {
 	return nil
 }
 
-// Backup creates a new backup of the specified path
-func (c *Client) Backup(ctx context.Context, path string, tags []string) error {
+func (c *clientImpl) Backup(ctx context.Context, path string, tags []string) error {
 	args := []string{"backup", path}
 	for _, tag := range tags {
 		args = append(args, "--tag", tag)
@@ -67,8 +39,7 @@ func (c *Client) Backup(ctx context.Context, path string, tags []string) error {
 	return nil
 }
 
-// Restore restores a snapshot to the specified path
-func (c *Client) Restore(ctx context.Context, snapshotID, targetPath string) error {
+func (c *clientImpl) Restore(ctx context.Context, snapshotID, targetPath string) error {
 	cmd := exec.CommandContext(ctx, "restic", "restore", snapshotID, "--target", targetPath)
 	c.setEnvironment(cmd)
 
@@ -78,8 +49,7 @@ func (c *Client) Restore(ctx context.Context, snapshotID, targetPath string) err
 	return nil
 }
 
-// RestoreFile restores a single file from a snapshot
-func (c *Client) RestoreFile(ctx context.Context, snapshotID, filePath, targetPath string) error {
+func (c *clientImpl) RestoreFile(ctx context.Context, snapshotID, filePath, targetPath string) error {
 	cmd := exec.CommandContext(ctx, "restic", "restore", snapshotID, "--include", filePath, "--target", targetPath)
 	c.setEnvironment(cmd)
 
@@ -89,8 +59,7 @@ func (c *Client) RestoreFile(ctx context.Context, snapshotID, filePath, targetPa
 	return nil
 }
 
-// FindSnapshots finds snapshots matching the given tags
-func (c *Client) FindSnapshots(ctx context.Context, tags []string) ([]*Snapshot, error) {
+func (c *clientImpl) FindSnapshots(ctx context.Context, tags []string) ([]*Snapshot, error) {
 	args := []string{"snapshots", "--json"}
 	for _, tag := range tags {
 		args = append(args, "--tag", tag)
@@ -112,8 +81,7 @@ func (c *Client) FindSnapshots(ctx context.Context, tags []string) ([]*Snapshot,
 	return snapshots, nil
 }
 
-// DeleteSnapshots deletes the specified snapshots
-func (c *Client) DeleteSnapshots(ctx context.Context, snapshotIDs []string) error {
+func (c *clientImpl) DeleteSnapshots(ctx context.Context, snapshotIDs []string) error {
 	args := append([]string{"forget", "--prune"}, snapshotIDs...)
 	cmd := exec.CommandContext(ctx, "restic", args...)
 	c.setEnvironment(cmd)
@@ -124,13 +92,12 @@ func (c *Client) DeleteSnapshots(ctx context.Context, snapshotIDs []string) erro
 	return nil
 }
 
-// EnsureDirectory ensures a directory exists
-func (c *Client) EnsureDirectory(ctx context.Context, path string) error {
+func (c *clientImpl) EnsureDirectory(ctx context.Context, path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
 // setEnvironment sets the required environment variables for the Restic command
-func (c *Client) setEnvironment(cmd *exec.Cmd) {
+func (c *clientImpl) setEnvironment(cmd *exec.Cmd) {
 	cmd.Env = append(cmd.Env,
 		"RESTIC_REPOSITORY="+c.config.Repository,
 		"RESTIC_PASSWORD="+c.config.Password,

@@ -17,13 +17,13 @@ type Handler interface {
 
 // handlerImpl implements the Handler interface
 type handlerImpl struct {
-	client     *restic.Client
+	client     restic.Client
 	walManager *wal.Manager
 	logger     *logging.Logger
 }
 
 // NewHandler creates a new restore handler
-func NewHandler(client *restic.Client) Handler {
+func NewHandler(client restic.Client) Handler {
 	logger := logging.NewLogger(logging.Config{
 		Level:      "info",
 		JSONOutput: false,
@@ -38,6 +38,18 @@ func NewHandler(client *restic.Client) Handler {
 
 // RestoreBackup restores a full backup to the specified directory
 func (h *handlerImpl) RestoreBackup(ctx context.Context, snapshotID, targetDir string) error {
+	if h.client == nil {
+		return fmt.Errorf("client not initialized")
+	}
+
+	if snapshotID == "" {
+		return fmt.Errorf("snapshot ID not specified")
+	}
+
+	if targetDir == "" {
+		return fmt.Errorf("target directory not specified")
+	}
+
 	logger := h.logger.Operation("restore_backup").WithFields(map[string]interface{}{
 		"snapshot_id": snapshotID,
 		"target_dir": targetDir,
@@ -55,6 +67,18 @@ func (h *handlerImpl) RestoreBackup(ctx context.Context, snapshotID, targetDir s
 
 // RestoreWAL restores a WAL segment for PITR
 func (h *handlerImpl) RestoreWAL(ctx context.Context, walFile, targetPath string) error {
+	if h.client == nil {
+		return fmt.Errorf("client not initialized")
+	}
+
+	if walFile == "" {
+		return fmt.Errorf("WAL file not specified")
+	}
+
+	if targetPath == "" {
+		return fmt.Errorf("target path not specified")
+	}
+
 	logger := h.logger.Operation("restore_wal").WithFields(map[string]interface{}{
 		"wal_file": walFile,
 		"target_path": targetPath,
