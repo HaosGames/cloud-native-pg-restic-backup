@@ -6,65 +6,81 @@ A backup plugin for CloudNativePG that implements backup and restore functionali
 
 - S3-compatible storage support
 - Point-in-Time Recovery (PITR) capability
-- WAL archiving
+- WAL archiving with timeline management
 - Incremental backups using Restic
+- Structured logging
 - Kubernetes-native deployment
 
-## Prerequisites
+## Documentation
 
-- Go 1.21+
+### Architecture
+- [Overview](docs/architecture/overview.md) - High-level architecture and component interaction
+- [Components](docs/architecture/overview.md#system-components) - Detailed component descriptions
+- [Data Flow](docs/architecture/overview.md#data-flow) - System data flow diagrams
+
+### Development
+- [Implementation Details](docs/development/implementation.md) - Detailed implementation documentation
+- [Development Guide](docs/development/guide.md) - Guide for developers
+- [Code Organization](docs/development/guide.md#code-organization) - Project structure and organization
+
+### Usage
+- [Usage Guide](docs/usage/guide.md) - Complete usage documentation
+- [Configuration](docs/usage/guide.md#configuration) - Configuration options
+- [Operations](docs/usage/guide.md#operations) - Operational procedures
+- [Troubleshooting](docs/usage/guide.md#troubleshooting) - Common issues and solutions
+
+## Quick Start
+
+### Prerequisites
+
 - Kubernetes cluster
-- CloudNativePG operator installed (v1.26.1)
+- CloudNativePG operator installed (v1.26.1+)
 - Restic
-- Docker
 - Access to S3-compatible storage
 
-## Development Setup
+### Installation
 
-### Manual Installation Steps
-
-1. Install Kind (if using local development):
-   ```bash
-   # Download Kind
-   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-   chmod +x ./kind
-   sudo mv ./kind /usr/local/bin/kind
-
-   # Create a cluster
-   kind create cluster --name cnpg-dev
-   ```
-
-2. Run the development setup script:
-   ```bash
-   chmod +x setup-dev.sh
-   ./setup-dev.sh
-   ```
-
-3. Source the updated environment:
-   ```bash
-   source ~/.bashrc
-   ```
-
-### Project Structure
-
+1. Deploy the configuration secret:
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: restic-backup-config
+  namespace: cnpg-system
+type: Opaque
+data:
+  RESTIC_PASSWORD: <base64-encoded-password>
+  AWS_ACCESS_KEY_ID: <base64-encoded-access-key>
+  AWS_SECRET_ACCESS_KEY: <base64-encoded-secret-key>
 ```
-.
-├── cmd
-│   └── plugin          # Main plugin executable
-├── internal
-│   ├── backup         # Backup implementation
-│   ├── restore        # Restore implementation
-│   └── restic         # Restic client wrapper
-├── examples           # Example configurations
-└── tests             # Integration tests
+
+2. Configure the plugin in your PostgreSQL cluster:
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgresql-test
+spec:
+  instances: 1
+  backup:
+    target: primary
+    custom:
+      method: http
+      pluginImage: your-registry/cnpg-restic-plugin:latest
+      secretName: restic-backup-config
+      env:
+        - name: RESTIC_REPOSITORY
+          value: "s3:https://your-endpoint/your-bucket/backups"
 ```
+
+See the [Usage Guide](docs/usage/guide.md) for complete configuration options.
 
 ## Development
 
 ### Building
 
 ```bash
-# Build the plugin binary
+# Build the plugin
 make build
 
 # Run tests
@@ -74,42 +90,16 @@ make test
 make docker-build PLUGIN_IMAGE=your-registry/cnpg-restic-plugin
 ```
 
-### Configuration
+See the [Development Guide](docs/development/guide.md) for detailed development instructions.
 
-The plugin requires the following environment variables:
+## Contributing
 
-- `RESTIC_REPOSITORY`: S3 repository URL
-- `RESTIC_PASSWORD`: Repository encryption password
-- `S3_ACCESS_KEY`: S3 access key
-- `S3_SECRET_KEY`: S3 secret key
-- `S3_ENDPOINT`: S3 endpoint (optional, defaults to AWS S3)
+1. Fork the repository
+2. Create your feature branch
+3. Make your changes
+4. Submit a pull request
 
-### Testing
-
-To run integration tests with S3:
-
-```bash
-export TEST_S3_ENDPOINT=your-endpoint
-export TEST_RESTIC_REPOSITORY=s3:your-bucket/path
-export TEST_RESTIC_PASSWORD=your-password
-export TEST_AWS_ACCESS_KEY_ID=your-access-key
-export TEST_AWS_SECRET_ACCESS_KEY=your-secret-key
-
-make test
-```
-
-### Deployment
-
-1. Update the image registry in examples/plugin-config.yaml
-2. Deploy the configuration:
-   ```bash
-   kubectl apply -f examples/plugin-config.yaml
-   ```
-
-3. Monitor the plugin:
-   ```bash
-   make logs
-   ```
+Please read our [Development Guide](docs/development/guide.md) before contributing.
 
 ## License
 
