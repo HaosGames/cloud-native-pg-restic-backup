@@ -100,7 +100,3 @@ See the [Development Guide](docs/development/guide.md) for detailed development 
 4. Submit a pull request
 
 Please read our [Development Guide](docs/development/guide.md) before contributing.
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
