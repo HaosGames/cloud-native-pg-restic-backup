@@ -29,7 +29,7 @@ jobs:
       run: make test
       env:
         # Tests will be skipped without these environment variables
-        TEST_RESTIC_REPOSITORY: ./test-repo
+        TEST_RESTIC_REPOSITORY: /tmp/test-restic-repo
         TEST_RESTIC_PASSWORD: abcdefg
 
   build-and-push:
