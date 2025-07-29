@@ -37,7 +37,7 @@ spec:
     custom:
       method: http
       endpointURL: http://localhost:8080
-      pluginImage: your-registry/cnpg-restic-plugin:latest
+      pluginImage: ghcr.io/haosgames/cloud-native-pg-restic-backup:latest
       secretName: restic-backup-config
       env:
         - name: RESTIC_REPOSITORY
@@ -50,7 +50,7 @@ spec:
     custom:
       method: http
       endpointURL: http://localhost:8080
-      pluginImage: your-registry/cnpg-restic-plugin:latest
+      pluginImage: ghcr.io/haosgames/cloud-native-pg-restic-backup:latest
       secretName: restic-backup-config
       env:
         - name: RESTIC_REPOSITORY
