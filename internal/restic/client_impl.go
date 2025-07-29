@@ -17,6 +17,11 @@ func (c *clientImpl) InitRepository(ctx context.Context) error {
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if strings.Contains(string(output), "repository master key and config already initialized") {
+			// Case for trying to intitialize already present s3 repos
+			return nil
+		}
+		if strings.Contains(string(output), "config file already exists") {
+			// Case for trying to intitialize already present local repos
 			return nil
 		}
 		return fmt.Errorf("failed to initialize repository: %w: %s", err, string(output))
