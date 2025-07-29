@@ -48,5 +48,5 @@ jobs:
 
     - name: Build and push Docker image
       run: |
-        make docker-build PLUGIN_IMAGE=${{ secrets.DOCKER_REGISTRY }}/cloud-native-pg-restic-backup
-        make docker-push PLUGIN_IMAGE=${{ secrets.DOCKER_REGISTRY }}/cloud-native-pg-restic-backup
+        make docker-build PLUGIN_IMAGE=ghcr.io/haosgames/cloud-native-pg-restic-backup
+        make docker-push PLUGIN_IMAGE=ghcr.io/haosgames/cloud-native-pg-restic-backup
