@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   test:
@@ -29,7 +29,6 @@ jobs:
       run: make test
       env:
         # Tests will be skipped without these environment variables
-        TEST_S3_ENDPOINT: ${{ secrets.TEST_S3_ENDPOINT }}
         TEST_RESTIC_REPOSITORY: ${{ secrets.TEST_RESTIC_REPOSITORY }}
         TEST_RESTIC_PASSWORD: ${{ secrets.TEST_RESTIC_PASSWORD }}
         TEST_AWS_ACCESS_KEY_ID: ${{ secrets.TEST_AWS_ACCESS_KEY_ID }}
@@ -37,7 +36,7 @@ jobs:
 
   build-and-push:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -47,7 +46,7 @@ jobs:
       with:
         registry: ${{ secrets.DOCKER_REGISTRY }}
         username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image
       run: |
